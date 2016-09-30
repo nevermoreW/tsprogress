@@ -1,16 +1,17 @@
 -module(ts2).
--export([new/0,in/2,out/2,tuplespace/2,find/2, delete/2]).
+-export([new/0,in/2,out/2,tuplespace/2,find/2, delete/2, match/2]).
 
 %Tuplespace
 tuplespace(CurrentList,QueueList) ->
      receive
           {From, Ref, Pattern, takeout} ->
+	      
                case find(CurrentList, Pattern) of
-	            {found,Pattern} ->
-		         NewList= delete(CurrentList,Pattern),
+	            {found,Matched} ->
+		         NewList= element(2,delete(CurrentList,Matched)),
 		         NewQueueList=QueueList,
-		         From ! {Pattern, Ref};
-		    {not_found,Pattern} ->
+		         From ! {Matched, Ref};
+		    {not_found,Matched} ->
 		         NewQueueList= QueueList ++[{Pattern, From, Ref}],
 		         NewList=CurrentList;
                     true ->
@@ -35,20 +36,17 @@ tuplespace(CurrentList,QueueList) ->
 tuplespace(NewList,NewQueueList).
 
 delete([First|Rest],A) ->
-     if
-          First==A ->
-               Rest;
-                                true ->
-                                     [First|delete(Rest,A)]
-                       end;
-
+       case match(A,First) of
+                true -> {value, Rest, First};
+		false -> [First|element(2,delete(Rest,A))]
+		end;
 delete([],A) ->
              [].
 find([First|Rest], A) ->
-                   if
-                        First == A ->
-                              {found, A};
-                        true ->
+                   case match(A,First) of
+                          true ->
+                              {found, First};
+                          false ->
                              find(Rest,A)
                         end;
 find([],A) ->
@@ -57,7 +55,7 @@ find([],A) ->
 
 %Returns the PID of a new tuplespace (the server)
 new() ->
-spawn_link(ts,tuplespace,[[],[]])
+spawn_link(ts2,tuplespace,[[],[]])
 %io:format("~w tuplespace created~n",[L])
 
 
@@ -68,10 +66,10 @@ in(TS,Pattern) ->
 Ref = make_ref(),
 TS ! {self(),Ref, Pattern, takeout},
 receive
-	{Pattern, Ref} ->
-	          io:format("~w received ~w with reference ~w from ~w~n",[self(),Pattern, Ref,TS]),
+	{Matched, Ref} ->
+	          io:format("~w received ~w with reference ~w from ~w~n",[self(),Matched, Ref,TS]),
 		  Pattern;
-         true ->
+         _ ->
 	      io:format("Error in Pattern or reference received~n",[])
 	     end
 .
@@ -86,3 +84,21 @@ receive
        true ->
        io:format("Some wrong happened :(", [])
        end.
+
+
+match(any,_) -> true;
+
+match(P,Q) when is_tuple(P), is_tuple(Q)
+                -> match(tuple_to_list(P),tuple_to_list(Q));
+
+
+match([P|PS],[L|LS]) -> case match(P,L) of
+                              true -> match(PS,LS);
+                              false -> false
+                         end;
+
+
+match(P,P) -> true;
+
+
+match(_,_) -> false.
